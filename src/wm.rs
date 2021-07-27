@@ -4,7 +4,10 @@ use crate::config::{Config, Handler};
 use crate::key::{get_lookup, Key, SymTable, META, META_SHIFT};
 use crate::mouse::MouseInfo;
 use crate::window::Workspace;
-use xcb::Connection;
+use xcb::{
+    xproto::{self, get_property},
+    Connection, EVENT_MASK_ENTER_WINDOW, EVENT_MASK_LEAVE_WINDOW,
+};
 
 // Shorthand for an X events
 pub type XMapEvent<'a> = &'a xcb::MapNotifyEvent;
@@ -134,13 +137,17 @@ impl StarMan {
         let window = map_notify.window();
         // Add to the workspace
         self.workspace_mut().add(window);
-        // Grab the events where the cursor leaves and enters the window
-        self.grab_enter_leave(window);
+
         // Focus on this window
         self.focus_window(window);
-        // Give window a border
-        self.border_unfocused(window);
-        self.set_border_width(window, self.conf.unfocused_border.size);
+
+        if !self.check_if_bar(window) {
+            // Grab the events where the cursor leaves and enters the window
+            self.grab_enter_leave(window);
+            // Give window a border
+            self.border_unfocused(window);
+            self.set_border_width(window, self.conf.unfocused_border.size);
+        }
     }
 
     fn destroy_event(&mut self, destroy_notify: XDestroyEvent) {
@@ -165,6 +172,9 @@ impl StarMan {
             x11::xlib::XCloseDisplay(display);
         }
          */
+        if self.check_if_bar(window) {
+            return;
+        }
         xcb::configure_window(
             &self.conn,
             window,
@@ -290,7 +300,10 @@ impl StarMan {
     pub fn destroy_focus(&mut self) {
         // Destroy the window that is currently focussed on
         if let Some(target) = self.workspace().get_focus() {
-            self.destroy(target);
+            if !self.check_if_bar(target) {
+                // don't destroy bars
+                self.destroy(target);
+            }
         }
     }
 
@@ -382,7 +395,7 @@ impl StarMan {
         StarMan::grab(
             &self.conn,
             window,
-            xcb::EVENT_MASK_ENTER_WINDOW | xcb::EVENT_MASK_LEAVE_WINDOW,
+            EVENT_MASK_ENTER_WINDOW | EVENT_MASK_LEAVE_WINDOW,
         );
     }
 
@@ -404,5 +417,84 @@ impl StarMan {
     fn workspace_mut(&mut self) -> &mut Workspace {
         // Get the current workspace (mutable operations)
         &mut self.workspaces[self.workspace]
+    }
+
+    fn check_if_bar(&mut self, window: u32) -> bool {
+        let class = self.get_wm_class(window);
+        let name = self.get_wm_name(window);
+        if class != "" {
+            // if it doesn't have no class (avoids dealing with scopes)
+            if (vec![
+                "dzen2".to_string(),
+                "polybar".to_string(),
+                "Polybar".to_string(),
+                "xmobar".to_string(),
+            ])
+            .iter()
+            .any(|i| *i == class)
+            {
+                return true;
+            } else {
+                return false;
+            }
+        } else if name != "" {
+            // if it doesn't have a class, check if it doesn't have no name
+            let bar_names = vec!["bar".to_string()]; // Damn you to hell, lemonbar!
+            if bar_names.iter().any(|i| *i == name) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            // it has neither and this window is ultra broken
+            // assume it isn't a bar
+            return false;
+        }
+    }
+
+    fn get_wm_name(&mut self, window: u32) -> String {
+        let mut buf = Vec::new();
+        match get_property(
+            &self.conn,
+            false,
+            window,
+            xproto::ATOM_WM_NAME,
+            xproto::ATOM_STRING,
+            0,
+            8,
+        )
+        .get_reply()
+        {
+            Ok(reply) => {
+                buf.extend_from_slice(reply.value());
+                let result = String::from_utf8(buf).unwrap();
+                let results: Vec<&str> = result.split('\0').collect();
+                results[0].to_string()
+            }
+            Err(_) => "".to_string(),
+        }
+    }
+
+    pub fn get_wm_class(&mut self, window: u32) -> String {
+        let mut buf = Vec::new();
+        match get_property(
+            &self.conn,
+            false,
+            window,
+            xproto::ATOM_WM_CLASS,
+            xproto::ATOM_STRING,
+            0,
+            8,
+        )
+        .get_reply()
+        {
+            Ok(reply) => {
+                buf.extend_from_slice(reply.value());
+                let result = String::from_utf8(buf).unwrap();
+                let results: Vec<&str> = result.split('\0').collect();
+                results[0].to_string()
+            }
+            Err(_) => "".to_string(),
+        }
     }
 }

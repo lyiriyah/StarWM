@@ -15,7 +15,7 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
-        // Start a fresh configuration struct
+        // Start a Fresh configuration struct
         Self {
             key_bindings: HashMap::new(),
             unfocused_border: WindowBorder {

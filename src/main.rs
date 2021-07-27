@@ -27,6 +27,8 @@ const MAIM: &str = "maim -suB --delay=0.1 | xclip -selection clipboard -t image/
 fn main() {
     // Initialise and run StarWM
     let mut starman = StarMan::new();
+    // Run bar
+    cmd!("DISPLAY=:1 /home/lyiriyah/src/rust/StarWM/examples/lemonbar_example.sh");
     // Exit on [Meta] + [Shift] + [BackSpace]
     starman.bind((META_SHIFT, "BackSpace"), |_| std::process::exit(0));
     // Start application launcher on [Meta] + [Space]
