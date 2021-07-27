@@ -475,7 +475,7 @@ impl StarMan {
         }
     }
 
-    pub fn get_wm_class(&mut self, window: u32) -> String {
+    fn get_wm_class(&mut self, window: u32) -> String {
         let mut buf = Vec::new();
         match get_property(
             &self.conn,
